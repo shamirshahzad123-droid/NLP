@@ -18,7 +18,7 @@ os.makedirs(data_folder, exist_ok=True)
 def clean_filename(title):
     """Clean the title to make it a valid filename"""
     title = re.sub(r'[<>:"/\\|?*]', '', title)
-    title = title.strip().replace(' ', '_')
+    title = title.strip().replace(' ', '_') 
     return title[:100] if len(title) > 100 else title
 
 def scrape_story_content(story_url):
