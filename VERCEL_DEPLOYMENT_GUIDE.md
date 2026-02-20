@@ -65,16 +65,17 @@ NLP/
 
    **Framework Preset:** Next.js (auto-detected)
    
-   **Root Directory:** Leave empty (root of repo)
+   **Root Directory:** `frontend` ⚠️ **IMPORTANT!**
    
    **Build and Output Settings:**
-   - Build Command: `cd frontend && npm install && npm run build`
-   - Output Directory: `frontend/.next`
-   - Install Command: `cd frontend && npm install`
-
-   **OR use the simpler approach:**
-   - Root Directory: `frontend`
-   - Vercel will auto-detect Next.js
+   - Build Command: Leave default (auto-detected)
+   - Output Directory: Leave default (auto-detected)  
+   - Install Command: Leave default (auto-detected)
+   
+   **Note:** 
+   - Setting Root Directory to `frontend` tells Vercel to build the Next.js app
+   - The `api/` folder and `vercel.json` at repo root will still be accessible
+   - Vercel will automatically handle the API routes defined in `vercel.json`
 
 5. **Environment Variables:**
    - No need to set `NEXT_PUBLIC_API_BASE_URL` - the frontend will automatically use `/api` when deployed on Vercel
