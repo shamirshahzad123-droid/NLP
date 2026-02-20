@@ -1,0 +1,2 @@
+b6c03b0a0a4c0241e2e9d0aa6daa8c1f95d4d14c 135794176 next-swc.win32-x64-msvc.node
+32b484ea01da02e88b9cea4c1ac826b876508ea4 1895936 resolver.win32-x64-msvc.node
