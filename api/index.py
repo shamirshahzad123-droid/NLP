@@ -106,7 +106,8 @@ class GenerateResponse(BaseModel):
     stopped_at_eot: bool = Field(..., description="Whether generation stopped at EOT token")
 
 
-@app.get("/")
+@app.get("/api")
+@app.get("/api/")
 async def root():
     """Health check endpoint."""
     return {
@@ -116,7 +117,7 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health():
     """Health check endpoint."""
     try:
@@ -133,7 +134,7 @@ async def health():
         }
 
 
-@app.post("/generate", response_model=GenerateResponse)
+@app.post("/api/generate", response_model=GenerateResponse)
 async def generate_text(request: GenerateRequest):
     """
     Generate text continuation from a given prefix.
@@ -199,8 +200,8 @@ async def generate_text(request: GenerateRequest):
 
 
 # Vercel serverless function handler
-def handler(request):
-    """Vercel serverless function entry point"""
-    from mangum import Mangum
-    mangum_handler = Mangum(app)
-    return mangum_handler(request)
+from mangum import Mangum
+
+# Export handler for Vercel - Mangum converts FastAPI ASGI app to AWS Lambda/Vercel format
+# Routes are defined with /api prefix to match Vercel's rewrite pattern (/api/* -> /api/index.py)
+handler = Mangum(app, lifespan="off")
