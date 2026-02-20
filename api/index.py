@@ -1,14 +1,18 @@
 """
-Phase IV: FastAPI Microservice for Trigram Language Model Inference
-Exposes the trained model via REST API endpoint POST /generate
+Vercel Serverless Function for FastAPI Backend
+This file handles all API routes for the Urdu Story Generator
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
-import uvicorn
 from pathlib import Path
+import sys
+import re
+
+# Add parent directory to path to import modules
+sys.path.append(str(Path(__file__).parent.parent))
 
 from trigram_lm import (
     load_model,
@@ -30,19 +34,48 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS so the Next.js frontend (different origin) can call this API
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for production, restrict this to your actual frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global variables for model and tokenizer (loaded at startup)
+# Global variables for model and tokenizer (loaded lazily)
 model = None
 vocab = None
 merge_rules = None
+
+
+def get_model():
+    """Lazy load model - Vercel serverless functions need this pattern"""
+    global model, vocab, merge_rules
+    
+    if model is None or vocab is None:
+        print("Loading language model and tokenizer...")
+        
+        model_path = Path(MODEL_FILE)
+        vocab_path = Path(VOCAB_FILE)
+        merges_path = Path(MERGES_FILE)
+        
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"Model file '{MODEL_FILE}' not found."
+            )
+        if not vocab_path.exists() or not merges_path.exists():
+            raise FileNotFoundError(
+                f"Tokenizer files not found."
+            )
+        
+        model = load_model(MODEL_FILE)
+        vocab, merge_rules = load_tokenizer(VOCAB_FILE, MERGES_FILE)
+        
+        print(f"✓ Model loaded: {len(model['unigram'])} unigrams, "
+              f"{len(model['bigram'])} bigrams, {len(model['trigram'])} trigrams")
+    
+    return model, vocab, merge_rules
 
 
 class GenerateRequest(BaseModel):
@@ -73,36 +106,6 @@ class GenerateResponse(BaseModel):
     stopped_at_eot: bool = Field(..., description="Whether generation stopped at EOT token")
 
 
-@app.on_event("startup")
-async def load_models():
-    """Load model and tokenizer at application startup."""
-    global model, vocab, merge_rules
-    
-    print("Loading language model and tokenizer...")
-    
-    # Check if model files exist
-    model_path = Path(MODEL_FILE)
-    vocab_path = Path(VOCAB_FILE)
-    merges_path = Path(MERGES_FILE)
-    
-    if not model_path.exists():
-        raise FileNotFoundError(
-            f"Model file '{MODEL_FILE}' not found. Run trigram_lm.py to train the model first."
-        )
-    if not vocab_path.exists() or not merges_path.exists():
-        raise FileNotFoundError(
-            f"Tokenizer files not found. Run train_bpe_tokenizer.py first."
-        )
-    
-    # Load model and tokenizer
-    model = load_model(MODEL_FILE)
-    vocab, merge_rules = load_tokenizer(VOCAB_FILE, MERGES_FILE)
-    
-    print(f"✓ Model loaded: {len(model['unigram'])} unigrams, "
-          f"{len(model['bigram'])} bigrams, {len(model['trigram'])} trigrams")
-    print("✓ API ready to serve requests")
-
-
 @app.get("/")
 async def root():
     """Health check endpoint."""
@@ -116,28 +119,31 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "model_loaded": model is not None,
-        "tokenizer_loaded": vocab is not None
-    }
+    try:
+        model, vocab, _ = get_model()
+        return {
+            "status": "healthy",
+            "model_loaded": model is not None,
+            "tokenizer_loaded": vocab is not None
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 @app.post("/generate", response_model=GenerateResponse)
 async def generate_text(request: GenerateRequest):
     """
     Generate text continuation from a given prefix.
-    
-    Args:
-        request: GenerateRequest with prefix, max_length, temperature, and optional seed
-        
-    Returns:
-        GenerateResponse with generated text, token count, and EOT flag
     """
-    if model is None or vocab is None:
+    try:
+        model, vocab, merge_rules = get_model()
+    except Exception as e:
         raise HTTPException(
             status_code=503,
-            detail="Model or tokenizer not loaded. Check server logs."
+            detail=f"Model loading error: {str(e)}"
         )
     
     try:
@@ -146,11 +152,11 @@ async def generate_text(request: GenerateRequest):
         
         # Use prefix as seed if provided, otherwise start from BOS
         if len(prefix_tokens) >= 2:
-            seed_tokens = prefix_tokens[-2:]  # Use last 2 tokens for trigram context
+            seed_tokens = prefix_tokens[-2:]
         elif len(prefix_tokens) == 1:
             seed_tokens = [TOKEN_BOS, prefix_tokens[0]]
         else:
-            seed_tokens = None  # Will use [BOS, BOS]
+            seed_tokens = None
         
         # Generate tokens
         generated_tokens = generate(
@@ -162,21 +168,18 @@ async def generate_text(request: GenerateRequest):
         )
         
         # Remove special tokens (BOS, EOS, EOP, EOT) and decode
-        # These special tokens show as boxes in the UI, so we filter them out
         special_tokens = {TOKEN_BOS, TOKEN_EOS, TOKEN_EOP, TOKEN_EOT}
         text_tokens = [t for t in generated_tokens if t not in special_tokens]
         generated_text = decode(text_tokens)
         
-        # Clean up any remaining special token characters that might have slipped through
-        # Replace them with appropriate punctuation or remove them
-        generated_text = generated_text.replace(TOKEN_EOS, "۔")  # Urdu full stop
-        generated_text = generated_text.replace(TOKEN_EOP, "\n\n")  # Paragraph break
-        generated_text = generated_text.replace(TOKEN_EOT, "")  # Remove EOT
-        generated_text = generated_text.replace(TOKEN_BOS, "")  # Remove BOS if any remain
+        # Clean up any remaining special token characters
+        generated_text = generated_text.replace(TOKEN_EOS, "۔")
+        generated_text = generated_text.replace(TOKEN_EOP, "\n\n")
+        generated_text = generated_text.replace(TOKEN_EOT, "")
+        generated_text = generated_text.replace(TOKEN_BOS, "")
         
         # Clean up multiple spaces and normalize whitespace
-        import re
-        generated_text = re.sub(r'\s+', ' ', generated_text)  # Multiple spaces to single space
+        generated_text = re.sub(r'\s+', ' ', generated_text)
         generated_text = generated_text.strip()
         
         # Check if stopped at EOT
@@ -195,6 +198,9 @@ async def generate_text(request: GenerateRequest):
         )
 
 
-if __name__ == "__main__":
-    # Run with uvicorn for development
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# Vercel serverless function handler
+def handler(request):
+    """Vercel serverless function entry point"""
+    from mangum import Mangum
+    mangum_handler = Mangum(app)
+    return mangum_handler(request)

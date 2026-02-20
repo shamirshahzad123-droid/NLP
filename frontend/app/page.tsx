@@ -8,7 +8,11 @@ type GenerateResponse = {
   stopped_at_eot: boolean;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// Use Vercel API routes when deployed, or localhost for development
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
+    ? '/api' 
+    : 'http://localhost:8000');
 
 export default function HomePage() {
   const [prefix, setPrefix] = useState("ایک بار");
