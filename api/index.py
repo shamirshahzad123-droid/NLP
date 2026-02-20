@@ -106,6 +106,8 @@ class GenerateResponse(BaseModel):
     stopped_at_eot: bool = Field(..., description="Whether generation stopped at EOT token")
 
 
+# Routes - handle both with and without /api prefix to cover different Vercel rewrite behaviors
+@app.get("/")
 @app.get("/api")
 @app.get("/api/")
 async def root():
@@ -117,6 +119,7 @@ async def root():
     }
 
 
+@app.get("/health")
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
@@ -134,6 +137,13 @@ async def health():
         }
 
 
+# Handle OPTIONS for CORS preflight
+@app.options("/generate")
+@app.options("/api/generate")
+async def options_generate():
+    return {"status": "ok"}
+
+@app.post("/generate", response_model=GenerateResponse)
 @app.post("/api/generate", response_model=GenerateResponse)
 async def generate_text(request: GenerateRequest):
     """
@@ -203,5 +213,10 @@ async def generate_text(request: GenerateRequest):
 from mangum import Mangum
 
 # Export handler for Vercel - Mangum converts FastAPI ASGI app to AWS Lambda/Vercel format
-# Routes are defined with /api prefix to match Vercel's rewrite pattern (/api/* -> /api/index.py)
+# Routes handle both /generate and /api/generate to cover different Vercel rewrite behaviors
 handler = Mangum(app, lifespan="off")
+
+# For local testing (not used in Vercel)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
