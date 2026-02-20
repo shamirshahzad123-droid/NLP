@@ -4,6 +4,7 @@ Exposes the trained model via REST API endpoint POST /generate
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 import uvicorn
@@ -26,6 +27,15 @@ app = FastAPI(
     title="Urdu Trigram Language Model API",
     description="REST API for generating Urdu text using a trigram language model",
     version="1.0.0",
+)
+
+# Enable CORS so the Next.js frontend (different origin) can call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # for production, restrict this to your actual frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Global variables for model and tokenizer (loaded at startup)
